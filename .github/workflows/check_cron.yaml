@@ -3,35 +3,36 @@ name: Execute SSH Commands
 on:
   workflow_dispatch: # 手动触发工作流
   schedule:
-    - cron: "0 0 */3 * *"  # 每3天早8点运行一次
+    - cron: "0 0 */3 * *"  # 每3天的午夜运行一次
 
 jobs:
   execute-commands:
     runs-on: ubuntu-latest
     steps:
-      - name: Set up SSHPass
-        run: sudo apt-get update && sudo apt-get install -y sshpass
-
-      - name: Get ACCOUNTS_JSON
-        id: get-accounts
+      - name: Set up SSH tools
         run: |
-          echo "$ACCOUNTS_JSON" > accounts.json
+          sudo apt-get update
+          sudo apt-get install -y sshpass jq
+
+      - name: Load ACCOUNTS_JSON
+        id: load-accounts
+        run: echo "$ACCOUNTS_JSON" > accounts.json
         env:
           ACCOUNTS_JSON: ${{ secrets.ACCOUNTS_JSON }}
-        # 从 GitHub Secrets 获取 ACCOUNTS_JSON 变量，并保存到文件 accounts.json
+        # 从 GitHub Secrets 中获取 ACCOUNTS_JSON 变量，并保存到文件 accounts.json
 
       - name: Generate SSH Commands
         id: generate-ssh-commands
         run: |
           echo "#!/bin/bash" > sshpass.sh
-          while IFS= read -r account; do
+          jq -c '.[]' accounts.json | while IFS= read -r account; do
             username=$(echo "$account" | jq -r '.username')
             password=$(echo "$account" | jq -r '.password')
             ssh=$(echo "$account" | jq -r '.ssh')
 
             echo "echo \"Executing for $username@$ssh\"" >> sshpass.sh
             echo "sshpass -p '$password' ssh -o StrictHostKeyChecking=no '$username@$ssh' 'bash <(curl -s https://raw.githubusercontent.com/cmliu/socks5-for-serv00/main/check_cron.sh)'" >> sshpass.sh
-          done < <(jq -c '.[]' accounts.json)
+          done
           chmod +x sshpass.sh
 
       - name: Execute SSH Commands
